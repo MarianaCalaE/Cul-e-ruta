@@ -1,0 +1,2080 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visor Catastral Mi Ciudad · Barranquilla</title>
+    <meta
+      name="description"
+      content="Aplicación web interactiva conectada a la API REST oficial de Catastro Mi Ciudad (Alcaldía de Barranquilla) con búsqueda de direcciones y consulta espacial en radio de 30 metros."
+    />
+    <meta property="og:title" content="Visor Catastral Mi Ciudad · Barranquilla" />
+    <meta
+      property="og:description"
+      content="Aplicación web interactiva conectada a la API REST oficial de Catastro Mi Ciudad (Alcaldía de Barranquilla) con búsqueda de direcciones y consulta espacial en radio de 30 metros."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Tipografía institucional: Plus Jakarta Sans + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Leaflet 1.9.4 CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+
+    <style>
+      :root {
+        --bg-canvas: #f8fafc;
+        --bg-surface: #ffffff;
+        --bg-subtle: #f1f5f9;
+        --bg-hover: #e2e8f0;
+        --text-primary: #0f172a;
+        --text-secondary: #475569;
+        --text-muted: #64748b;
+        --border-hairline: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --accent-primary: #0f4c81;
+        --accent-primary-hover: #0c3d68;
+        --accent-soft: #eff6ff;
+        --accent-highlight: #0284c7;
+        --status-success: #15803d;
+        --status-warning: #b45309;
+        --status-warning-bg: #fffbeb;
+        --status-warning-border: #fde68a;
+        --status-error: #b91c1c;
+        --status-error-bg: #fef2f2;
+        --status-error-border: #fecaca;
+        --shadow-float: 0 8px 28px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.06);
+        --radius-panel: 12px;
+        --radius-control: 8px;
+        --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        --transition-fast: 160ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: var(--font-sans);
+        color: var(--text-primary);
+        background-color: var(--bg-canvas);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* Mapa a pantalla completa */
+      #map {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        background-color: #eef2f6;
+      }
+
+      /* Utilidades tipográficas */
+      .mono {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* Botones y accesibilidad */
+      button {
+        font-family: inherit;
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: inherit;
+        padding: 0;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
+      }
+
+      /* Barra flotante superior de búsqueda */
+      .search-dock {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        z-index: 1000;
+        width: 420px;
+        max-width: calc(100vw - 32px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        pointer-events: none;
+      }
+
+      .search-dock > * {
+        pointer-events: auto;
+      }
+
+      .search-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-panel);
+        box-shadow: var(--shadow-float);
+        overflow: hidden;
+      }
+
+      .brand-strip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-hairline);
+        background: var(--bg-surface);
+      }
+
+      .brand-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .brand-meta {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-muted);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .search-form {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+      }
+
+      .search-input-wrap {
+        position: relative;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        min-width: 0;
+      }
+
+      .search-icon {
+        position: absolute;
+        left: 10px;
+        width: 16px;
+        height: 16px;
+        color: var(--text-muted);
+        pointer-events: none;
+        flex-shrink: 0;
+      }
+
+      .search-input {
+        width: 100%;
+        height: 40px;
+        padding: 0 36px 0 34px;
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        background: var(--bg-subtle);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        color: var(--text-primary);
+        transition: border-color var(--transition-fast), background-color var(--transition-fast);
+      }
+
+      .search-input::placeholder {
+        color: var(--text-muted);
+      }
+
+      .search-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+        background: var(--bg-surface);
+      }
+
+      .clear-btn {
+        position: absolute;
+        right: 4px;
+        width: 32px;
+        height: 32px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        color: var(--text-muted);
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+      }
+
+      .clear-btn.visible {
+        display: inline-flex;
+      }
+
+      .clear-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+
+      .search-submit-btn {
+        height: 40px;
+        padding: 0 14px;
+        border-radius: var(--radius-control);
+        background: var(--accent-primary);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: background-color var(--transition-fast);
+      }
+
+      .search-submit-btn:hover:not(:disabled) {
+        background: var(--accent-primary-hover);
+      }
+
+      .search-submit-btn:disabled {
+        opacity: 0.72;
+        cursor: wait;
+      }
+
+      /* Lista desplegable de resultados */
+      .search-dropdown {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-panel);
+        box-shadow: var(--shadow-float);
+        max-height: min(400px, calc(100dvh - 180px));
+        overflow-y: auto;
+        display: none;
+      }
+
+      .search-dropdown.open {
+        display: block;
+      }
+
+      .dropdown-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-hairline);
+        background: var(--bg-subtle);
+        font-size: 12px;
+        color: var(--text-secondary);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+
+      .dropdown-close {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--accent-primary);
+        padding: 4px 8px;
+        border-radius: 6px;
+        white-space: nowrap;
+      }
+
+      .dropdown-close:hover {
+        background: var(--accent-soft);
+      }
+
+      .result-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .result-item + .result-item {
+        border-top: 1px solid var(--border-hairline);
+      }
+
+      .result-btn {
+        width: 100%;
+        text-align: left;
+        padding: 11px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        transition: background-color var(--transition-fast);
+      }
+
+      .result-btn:hover {
+        background: var(--accent-soft);
+      }
+
+      .result-btn.active {
+        background: var(--accent-soft);
+      }
+
+      .result-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--text-primary);
+        line-height: 1.35;
+      }
+
+      .result-meta {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.4;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* Indicadores de estado, carga y error */
+      .state-box {
+        padding: 18px 16px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text-secondary);
+      }
+
+      .state-box.error {
+        background: var(--status-error-bg);
+        color: var(--status-error);
+      }
+
+      .state-box.warning {
+        background: var(--status-warning-bg);
+        color: var(--status-warning);
+      }
+
+      .state-content {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .state-title {
+        margin: 0 0 2px;
+        font-weight: 600;
+        font-size: 13.5px;
+      }
+
+      .state-desc {
+        margin: 0;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+
+      .retry-btn {
+        margin-top: 8px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid currentColor;
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .retry-btn:hover {
+        background: rgba(15, 23, 42, 0.05);
+      }
+
+      /* Spinner CSS limpio */
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+
+      .spinner-dark {
+        border-color: var(--border-strong);
+        border-right-color: var(--accent-primary);
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Banner discreto de estado de capa dinámica */
+      .map-layer-toast {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 950;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        box-shadow: var(--shadow-float);
+        padding: 8px 14px;
+        display: none;
+        align-items: center;
+        gap: 10px;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--text-primary);
+        max-width: calc(100vw - 32px);
+      }
+
+      .map-layer-toast.visible {
+        display: inline-flex;
+      }
+
+      .map-layer-toast.error {
+        background: var(--status-error-bg);
+        border-color: var(--status-error-border);
+        color: var(--status-error);
+      }
+
+      /* Panel lateral de consulta espacial (30m) */
+      .inspector-panel {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        bottom: 16px;
+        width: 390px;
+        max-width: calc(100vw - 32px);
+        z-index: 1000;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-panel);
+        box-shadow: var(--shadow-float);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transform: translateX(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease;
+      }
+
+      .inspector-panel.open {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .inspector-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-hairline);
+        background: var(--bg-surface);
+        flex-shrink: 0;
+      }
+
+      .inspector-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+        line-height: 1.3;
+      }
+
+      .inspector-subtitle {
+        margin: 3px 0 0;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .icon-close-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-control);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-secondary);
+        flex-shrink: 0;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+      }
+
+      .icon-close-btn:hover {
+        background: var(--bg-subtle);
+        color: var(--text-primary);
+      }
+
+      /* Pestañas segmentadas para Direcciones (105) / Manzanas (320) */
+      .inspector-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 8px 12px;
+        background: var(--bg-subtle);
+        border-bottom: 1px solid var(--border-hairline);
+        flex-shrink: 0;
+      }
+
+      .tab-btn {
+        flex: 1;
+        height: 34px;
+        padding: 0 10px;
+        border-radius: 6px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+      }
+
+      .tab-btn:hover {
+        color: var(--text-primary);
+      }
+
+      .tab-btn.active {
+        background: var(--bg-surface);
+        color: var(--accent-primary);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+      }
+
+      .inspector-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+      }
+
+      .feature-section {
+        border-bottom: 1px solid var(--border-hairline);
+      }
+
+      .feature-section:last-child {
+        border-bottom: none;
+      }
+
+      .feature-section-head {
+        padding: 12px 16px;
+        background: var(--bg-subtle);
+        border-bottom: 1px solid var(--border-hairline);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .feature-section-title {
+        margin: 0;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .feature-section-count {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .feature-card {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-hairline);
+      }
+
+      .feature-card:last-child {
+        border-bottom: none;
+      }
+
+      .feature-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .feature-card-name {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        line-height: 1.35;
+      }
+
+      .feature-focus-btn {
+        height: 30px;
+        padding: 0 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border-strong);
+        background: var(--bg-surface);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--accent-primary);
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: background-color var(--transition-fast);
+      }
+
+      .feature-focus-btn:hover {
+        background: var(--accent-soft);
+      }
+
+      /* Tabla limpia de atributos */
+      .attr-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+
+      .attr-table tr {
+        border-top: 1px solid var(--border-hairline);
+      }
+
+      .attr-table tr:first-child {
+        border-top: none;
+      }
+
+      .attr-table th {
+        width: 44%;
+        text-align: left;
+        padding: 6px 8px 6px 0;
+        font-weight: 500;
+        color: var(--text-muted);
+        vertical-align: top;
+        word-break: break-word;
+      }
+
+      .attr-table td {
+        padding: 6px 0;
+        color: var(--text-primary);
+        font-weight: 500;
+        vertical-align: top;
+        word-break: break-word;
+      }
+
+      .attr-table td.is-numeric {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Ayuda contextual discreta en esquina inferior cuando no hay panel abierto */
+      .hint-footer {
+        position: fixed;
+        bottom: 16px;
+        right: 64px;
+        z-index: 900;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: var(--radius-control);
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+        padding: 8px 12px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        pointer-events: none;
+        max-width: 340px;
+      }
+
+      /* Personalización limpia de controles nativos de Leaflet */
+      .leaflet-control-layers {
+        border: 1px solid var(--border-hairline) !important;
+        border-radius: var(--radius-panel) !important;
+        box-shadow: var(--shadow-float) !important;
+        padding: 10px 12px !important;
+        font-family: var(--font-sans) !important;
+        font-size: 13px !important;
+        color: var(--text-primary) !important;
+        background: var(--bg-surface) !important;
+      }
+
+      .leaflet-control-layers-base label,
+      .leaflet-control-layers-overlays label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        cursor: pointer;
+        margin: 0;
+      }
+
+      .leaflet-control-layers-separator {
+        border-top-color: var(--border-hairline) !important;
+        margin: 8px 0 !important;
+      }
+
+      .leaflet-bar {
+        border: 1px solid var(--border-hairline) !important;
+        border-radius: var(--radius-control) !important;
+        box-shadow: var(--shadow-float) !important;
+        overflow: hidden;
+      }
+
+      .leaflet-bar a {
+        color: var(--text-primary) !important;
+        border-bottom-color: var(--border-hairline) !important;
+        width: 36px !important;
+        height: 36px !important;
+        line-height: 36px !important;
+        font-family: var(--font-sans) !important;
+      }
+
+      /* Popup personalizado de Leaflet */
+      .leaflet-popup-content-wrapper {
+        border-radius: var(--radius-panel) !important;
+        box-shadow: var(--shadow-float) !important;
+        border: 1px solid var(--border-hairline);
+        padding: 0 !important;
+        overflow: hidden;
+      }
+
+      .leaflet-popup-content {
+        margin: 0 !important;
+        width: 320px !important;
+        max-width: calc(100vw - 64px) !important;
+        font-family: var(--font-sans) !important;
+      }
+
+      .popup-shell {
+        display: flex;
+        flex-direction: column;
+        max-height: 340px;
+      }
+
+      .popup-head {
+        padding: 12px 34px 10px 14px;
+        background: var(--bg-subtle);
+        border-bottom: 1px solid var(--border-hairline);
+      }
+
+      .popup-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary);
+        line-height: 1.3;
+      }
+
+      .popup-meta {
+        margin: 3px 0 0;
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+
+      .popup-body {
+        padding: 8px 14px 12px;
+        overflow-y: auto;
+      }
+
+      /* Marcador SVG personalizado */
+      .custom-pin-icon {
+        background: transparent;
+        border: none;
+      }
+
+      /* Diseño responsivo móvil (< 768px) */
+      @media (max-width: 767px) {
+        .search-dock {
+          top: 12px;
+          left: 12px;
+          right: 12px;
+          width: auto;
+          max-width: none;
+        }
+
+        .brand-strip {
+          padding: 8px 12px;
+        }
+
+        .search-form {
+          padding: 6px 8px;
+        }
+
+        .search-input,
+        .search-submit-btn {
+          height: 44px;
+        }
+
+        .inspector-panel {
+          top: auto;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          max-width: 100%;
+          height: 58dvh;
+          max-height: 58dvh;
+          border-radius: 16px 16px 0 0;
+          border-left: none;
+          border-right: none;
+          border-bottom: none;
+          transform: translateY(105%);
+        }
+
+        .inspector-panel.open {
+          transform: translateY(0);
+        }
+
+        .hint-footer {
+          display: none;
+        }
+
+        .leaflet-bottom.leaflet-left {
+          bottom: 16px;
+        }
+
+        .leaflet-control-layers {
+          font-size: 12px !important;
+          padding: 8px 10px !important;
+        }
+      }
+
+      /* Respeto a prefers-reduced-motion */
+      @media (prefers-reduced-motion: reduce) {
+        .inspector-panel,
+        .search-input,
+        .search-submit-btn,
+        .result-btn,
+        .tab-btn {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-label="Visor geográfico catastral de Barranquilla">
+      <div id="map" role="region" aria-label="Mapa interactivo de Barranquilla"></div>
+
+      <!-- Barra de búsqueda flotante -->
+      <section class="search-dock" aria-label="Buscador de direcciones">
+        <div class="search-card">
+          <div class="brand-strip">
+            <h1 class="brand-title">Catastro Mi Ciudad</h1>
+            <span class="brand-meta">Barranquilla · Datos Abiertos</span>
+          </div>
+
+          <form id="searchForm" class="search-form" role="search" novalidate>
+            <div class="search-input-wrap">
+              <svg
+                class="search-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <label for="addressInput" class="sr-only">Buscar dirección en Barranquilla</label>
+              <input
+                id="addressInput"
+                class="search-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Buscar dirección (ej. CL 72, KR 54, CL 84)"
+                aria-autocomplete="list"
+                aria-controls="searchDropdown"
+              />
+              <button
+                id="clearSearchBtn"
+                type="button"
+                class="clear-btn"
+                aria-label="Limpiar búsqueda"
+                title="Limpiar búsqueda"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </button>
+            </div>
+            <button id="searchSubmitBtn" type="submit" class="search-submit-btn">
+              <span id="searchBtnSpinner" class="spinner" style="display: none" aria-hidden="true"></span>
+              <span id="searchBtnLabel">Buscar</span>
+            </button>
+          </form>
+        </div>
+
+        <div
+          id="searchDropdown"
+          class="search-dropdown"
+          role="region"
+          aria-live="polite"
+          aria-label="Resultados de direcciones"
+        ></div>
+      </section>
+
+      <!-- Estado de carga / error de capa dinámica -->
+      <div id="layerToast" class="map-layer-toast" role="status" aria-live="polite">
+        <span id="layerToastSpinner" class="spinner spinner-dark" style="display: none" aria-hidden="true"></span>
+        <span id="layerToastText"></span>
+      </div>
+
+      <!-- Ayuda contextual -->
+      <div id="hintFooter" class="hint-footer">
+        Haz clic en cualquier punto del mapa para consultar direcciones (105) y manzanas (320) en un radio de 30 metros.
+      </div>
+
+      <!-- Panel lateral de consulta espacial (30 m) -->
+      <aside
+        id="inspectorPanel"
+        class="inspector-panel"
+        aria-label="Detalle catastral del punto seleccionado"
+        aria-hidden="true"
+      >
+        <div class="inspector-header">
+          <div>
+            <h2 class="inspector-title">Consulta espacial · Radio 30 m</h2>
+            <p id="inspectorCoords" class="inspector-subtitle mono">Haz clic en el mapa</p>
+          </div>
+          <button
+            id="closeInspectorBtn"
+            type="button"
+            class="icon-close-btn"
+            aria-label="Cerrar panel de consulta"
+            title="Cerrar panel"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="inspector-tabs" role="tablist" aria-label="Filtrar resultados por capa">
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn active"
+            data-tab="all"
+            aria-selected="true"
+          >
+            Ambas (<span id="countAll">0</span>)
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            data-tab="105"
+            aria-selected="false"
+          >
+            Direcciones (<span id="count105">0</span>)
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            data-tab="320"
+            aria-selected="false"
+          >
+            Manzanas (<span id="count320">0</span>)
+          </button>
+        </div>
+
+        <div id="inspectorBody" class="inspector-body" aria-live="polite"></div>
+      </aside>
+    </main>
+
+    <!-- Leaflet 1.9.4 JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <!-- Esri-Leaflet 3.0.12 JS -->
+    <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" crossorigin=""></script>
+
+    <script>
+      (function () {
+        'use strict';
+
+        // =====================================================================
+        // Configuración de endpoints oficiales Mi Ciudad (Alcaldía de Barranquilla)
+        // =====================================================================
+        const SERVICE_URL =
+          'https://miciudad.barranquilla.gov.co/gis/rest/services/catastro/datosabiertos/MapServer';
+        const LAYER_DIRECCIONES_ID = 105;
+        const LAYER_MANZANAS_ID = 320;
+        const REQUEST_TIMEOUT_MS = 15000;
+        const INITIAL_CENTER = [10.9878, -74.7889];
+        const INITIAL_ZOOM = 13;
+
+        // Estado en memoria
+        const layerSchemas = {
+          105: null,
+          320: null
+        };
+        const schemaPromises = {};
+        let lastSearchResults = [];
+        let activeSearchAbort = null;
+        let activeClickAbort = null;
+        let activeInspectorTab = 'all';
+        let lastClickState = null;
+
+        // Referencias DOM
+        const searchForm = document.getElementById('searchForm');
+        const addressInput = document.getElementById('addressInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const searchSubmitBtn = document.getElementById('searchSubmitBtn');
+        const searchBtnSpinner = document.getElementById('searchBtnSpinner');
+        const searchBtnLabel = document.getElementById('searchBtnLabel');
+        const searchDropdown = document.getElementById('searchDropdown');
+
+        const layerToast = document.getElementById('layerToast');
+        const layerToastSpinner = document.getElementById('layerToastSpinner');
+        const layerToastText = document.getElementById('layerToastText');
+
+        const inspectorPanel = document.getElementById('inspectorPanel');
+        const inspectorCoords = document.getElementById('inspectorCoords');
+        const inspectorBody = document.getElementById('inspectorBody');
+        const closeInspectorBtn = document.getElementById('closeInspectorBtn');
+        const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+        const countAllEl = document.getElementById('countAll');
+        const count105El = document.getElementById('count105');
+        const count320El = document.getElementById('count320');
+
+        // =====================================================================
+        // 1. Inicialización del Mapa Base y Capas de Mi Ciudad
+        // =====================================================================
+        const map = L.map('map', {
+          center: INITIAL_CENTER,
+          zoom: INITIAL_ZOOM,
+          zoomControl: false
+        });
+
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        const cartoPositron = L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+          {
+            attribution:
+              '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+          }
+        ).addTo(map);
+
+        const osmStandard = L.tileLayer(
+          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          {
+            attribution:
+              '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
+            maxZoom: 19
+          }
+        );
+
+        const miCiudadCatastro = L.esri
+          .dynamicMapLayer({
+            url: SERVICE_URL,
+            opacity: 0.78,
+            useCors: true
+          })
+          .addTo(map);
+
+        const baseMaps = {
+          'CartoDB Positron (Claro)': cartoPositron,
+          'OpenStreetMap': osmStandard
+        };
+
+        const overlayMaps = {
+          'Catastro Mi Ciudad (Alcaldía)': miCiudadCatastro
+        };
+
+        L.control
+          .layers(baseMaps, overlayMaps, {
+            position: 'bottomleft',
+            collapsed: false
+          })
+          .addTo(map);
+
+        // Eventos de carga y error de la capa dinámica
+        let layerLoadTimer = null;
+        miCiudadCatastro.on('loading', function () {
+          clearTimeout(layerLoadTimer);
+          showLayerToast('Cargando capa catastral de Mi Ciudad...', true, false);
+          layerLoadTimer = setTimeout(function () {
+            showLayerToast(
+              'La capa catastral de Mi Ciudad está tardando en responder.',
+              false,
+              false
+            );
+          }, 12000);
+        });
+
+        miCiudadCatastro.on('load', function () {
+          clearTimeout(layerLoadTimer);
+          hideLayerToast();
+        });
+
+        miCiudadCatastro.on('requesterror', function () {
+          clearTimeout(layerLoadTimer);
+          showLayerToast(
+            'No se pudo cargar la imagen cartográfica de Mi Ciudad. Puedes seguir consultando direcciones o hacer clic en el mapa.',
+            false,
+            true
+          );
+          setTimeout(hideLayerToast, 6000);
+        });
+
+        // Capas vectoriales para marcadores y geometrías seleccionadas
+        const searchMarkerGroup = L.layerGroup().addTo(map);
+        const clickOverlayGroup = L.layerGroup().addTo(map);
+        const highlightGeometryGroup = L.layerGroup().addTo(map);
+
+        // =====================================================================
+        // Utilidades generales y de formato seguro
+        // =====================================================================
+        function escapeHtml(value) {
+          if (value === null || value === undefined) return '';
+          return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        function createPinIcon(colorHex) {
+          const fill = colorHex || '#0f4c81';
+          const svg = `
+            <svg width="30" height="38" viewBox="0 0 30 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 1C7.82 1 2 6.82 2 14C2 23.75 15 36.5 15 36.5C15 36.5 28 23.75 28 14C28 6.82 22.18 1 15 1Z" fill="${fill}" stroke="#FFFFFF" stroke-width="2.5"/>
+              <circle cx="15" cy="14" r="5" fill="#FFFFFF"/>
+            </svg>
+          `;
+          return L.divIcon({
+            className: 'custom-pin-icon',
+            html: svg,
+            iconSize: [30, 38],
+            iconAnchor: [15, 37],
+            popupAnchor: [0, -34]
+          });
+        }
+
+        function showLayerToast(message, isLoading, isError) {
+          layerToastText.textContent = message;
+          layerToastSpinner.style.display = isLoading ? 'inline-block' : 'none';
+          layerToast.classList.toggle('error', Boolean(isError));
+          layerToast.classList.add('visible');
+        }
+
+        function hideLayerToast() {
+          layerToast.classList.remove('visible', 'error');
+        }
+
+        async function fetchJsonWithTimeout(url, options) {
+          const opts = options || {};
+          const timeoutMs = opts.timeoutMs || REQUEST_TIMEOUT_MS;
+          const externalSignal = opts.signal;
+
+          const controller = new AbortController();
+          let timedOut = false;
+
+          const timer = setTimeout(function () {
+            timedOut = true;
+            controller.abort();
+          }, timeoutMs);
+
+          if (externalSignal) {
+            if (externalSignal.aborted) {
+              clearTimeout(timer);
+              controller.abort();
+            } else {
+              externalSignal.addEventListener(
+                'abort',
+                function () {
+                  clearTimeout(timer);
+                  controller.abort();
+                },
+                { once: true }
+              );
+            }
+          }
+
+          try {
+            const response = await fetch(url, {
+              method: 'GET',
+              mode: 'cors',
+              signal: controller.signal
+            });
+
+            if (!response.ok) {
+              throw new Error(`Error HTTP ${response.status} del servidor de Mi Ciudad.`);
+            }
+
+            const data = await response.json();
+
+            if (data && data.error) {
+              const apiMsg = data.error.message || 'Error en la consulta al servicio ArcGIS.';
+              throw new Error(apiMsg);
+            }
+
+            return data;
+          } catch (err) {
+            if (err && err.name === 'AbortError') {
+              if (timedOut) {
+                const timeoutErr = new Error(
+                  'El servidor de Mi Ciudad tardó demasiado en responder (tiempo de espera agotado).'
+                );
+                timeoutErr.isTimeout = true;
+                throw timeoutErr;
+              }
+              const cancelErr = new Error('Consulta cancelada');
+              cancelErr.isCancelled = true;
+              throw cancelErr;
+            }
+            throw err;
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+
+        // =====================================================================
+        // Consulta de esquema de capas (105?f=pjson y 320?f=pjson)
+        // =====================================================================
+        async function ensureLayerSchema(layerId) {
+          if (layerSchemas[layerId]) {
+            return layerSchemas[layerId];
+          }
+          if (schemaPromises[layerId]) {
+            return schemaPromises[layerId];
+          }
+
+          const schemaUrl = `${SERVICE_URL}/${layerId}?f=pjson`;
+          schemaPromises[layerId] = fetchJsonWithTimeout(schemaUrl, { timeoutMs: 12000 })
+            .then(function (metadata) {
+              const fields = Array.isArray(metadata.fields) ? metadata.fields : [];
+              const aliasMap = {};
+              const stringFields = [];
+
+              fields.forEach(function (f) {
+                if (f && f.name) {
+                  aliasMap[f.name] = f.alias || f.name;
+                  if (f.type === 'esriFieldTypeString') {
+                    stringFields.push(f.name);
+                  }
+                }
+              });
+
+              const parsed = {
+                name: metadata.name || `Capa ${layerId}`,
+                displayField: metadata.displayField || null,
+                fields: fields,
+                aliasMap: aliasMap,
+                stringFields: stringFields
+              };
+
+              layerSchemas[layerId] = parsed;
+              return parsed;
+            })
+            .catch(function (err) {
+              delete schemaPromises[layerId];
+              throw err;
+            });
+
+          return schemaPromises[layerId];
+        }
+
+        function getSearchCandidateFields(schema) {
+          if (!schema || !schema.stringFields || schema.stringFields.length === 0) {
+            return [];
+          }
+
+          const stringSet = new Set(schema.stringFields);
+          const selected = [];
+
+          // 1. Priorizar displayField si es campo de texto
+          if (schema.displayField && stringSet.has(schema.displayField)) {
+            selected.push(schema.displayField);
+          }
+
+          // 2. Priorizar campos cuyo nombre o alias sugiera dirección / nomenclatura / texto
+          const priorityRegex = /(dir|nomen|via|texto|nombre|label|etiqueta|calle|carrera)/i;
+          const systemRegex = /^(shape|globalid|objectid|fid)/i;
+
+          schema.fields.forEach(function (f) {
+            if (
+              f.type === 'esriFieldTypeString' &&
+              !systemRegex.test(f.name) &&
+              !selected.includes(f.name) &&
+              (priorityRegex.test(f.name) || priorityRegex.test(f.alias || ''))
+            ) {
+              selected.push(f.name);
+            }
+          });
+
+          // 3. Si aún no hay candidatos, usar los primeros campos de texto no internos
+          if (selected.length === 0) {
+            schema.stringFields.forEach(function (name) {
+              if (!systemRegex.test(name) && !selected.includes(name)) {
+                selected.push(name);
+              }
+            });
+          }
+
+          // Limitar a 3 campos para mantener el filtro SQL limpio y veloz
+          return selected.slice(0, 3);
+        }
+
+        function getFeatureTitle(feature, schema, fallbackPrefix) {
+          const props = (feature && feature.properties) || {};
+          if (schema && schema.displayField && props[schema.displayField]) {
+            return String(props[schema.displayField]);
+          }
+
+          const preferredKeys = Object.keys(props).filter(function (k) {
+            return /(dir|nomen|nombre|barrio|manzana|codigo|cod)/i.test(k) && props[k] !== null && props[k] !== '';
+          });
+          if (preferredKeys.length > 0) {
+            return String(props[preferredKeys[0]]);
+          }
+
+          const firstNonEmpty = Object.keys(props).find(function (k) {
+            return props[k] !== null && props[k] !== '' && !/^(objectid|fid|shape)/i.test(k);
+          });
+          if (firstNonEmpty) {
+            return String(props[firstNonEmpty]);
+          }
+
+          return fallbackPrefix || 'Registro catastral';
+        }
+
+        function getFeatureSecondaryMeta(feature, schema) {
+          const props = (feature && feature.properties) || {};
+          const primaryKey = schema && schema.displayField ? schema.displayField : null;
+          const parts = [];
+
+          Object.keys(props).forEach(function (key) {
+            if (key === primaryKey) return;
+            if (/^(objectid|fid|globalid|shape)/i.test(key)) return;
+            const val = props[key];
+            if (val === null || val === undefined || String(val).trim() === '') return;
+            if (parts.length < 3) {
+              const label = (schema && schema.aliasMap && schema.aliasMap[key]) || key;
+              parts.push(`${label}: ${val}`);
+            }
+          });
+
+          return parts.join(' · ');
+        }
+
+        function buildAttributesTableHtml(properties, schema) {
+          const props = properties || {};
+          const entries = Object.entries(props);
+
+          if (entries.length === 0) {
+            return '<p class="state-desc" style="padding: 8px 0; color: var(--text-muted);">Sin atributos disponibles.</p>';
+          }
+
+          const rows = entries
+            .map(function ([key, rawVal]) {
+              const label = (schema && schema.aliasMap && schema.aliasMap[key]) || key;
+              const isEmpty = rawVal === null || rawVal === undefined || String(rawVal).trim() === '';
+              const displayVal = isEmpty ? '—' : String(rawVal);
+              const isNumeric = !isEmpty && typeof rawVal === 'number';
+              return `
+                <tr>
+                  <th title="${escapeHtml(key)}">${escapeHtml(label)}</th>
+                  <td class="${isNumeric ? 'is-numeric' : ''}">${escapeHtml(displayVal)}</td>
+                </tr>
+              `;
+            })
+            .join('');
+
+          return `<table class="attr-table"><tbody>${rows}</tbody></table>`;
+        }
+
+        function getFeatureLatLng(feature) {
+          if (!feature || !feature.geometry) return null;
+          const geom = feature.geometry;
+          if (geom.type === 'Point' && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+            return L.latLng(geom.coordinates[1], geom.coordinates[0]);
+          }
+          try {
+            const tempLayer = L.geoJSON(feature);
+            const bounds = tempLayer.getBounds();
+            if (bounds && bounds.isValid()) {
+              return bounds.getCenter();
+            }
+          } catch (_) {
+            return null;
+          }
+          return null;
+        }
+
+        // =====================================================================
+        // 2. Buscador de Ubicaciones y Direcciones (Capa 105)
+        // =====================================================================
+        function setSearchLoading(loading) {
+          searchSubmitBtn.disabled = loading;
+          searchBtnSpinner.style.display = loading ? 'inline-block' : 'none';
+          searchBtnLabel.textContent = loading ? 'Buscando' : 'Buscar';
+        }
+
+        function renderDropdownMessage(type, title, description, retryCallback) {
+          const isLoading = type === 'loading';
+          const boxClass =
+            type === 'error' ? 'state-box error' : type === 'warning' ? 'state-box warning' : 'state-box';
+
+          searchDropdown.innerHTML = `
+            <div class="dropdown-header">
+              <span>${isLoading ? 'Consultando servicio Mi Ciudad' : 'Búsqueda de direcciones'}</span>
+              <button type="button" class="dropdown-close" id="closeDropdownBtn">Cerrar</button>
+            </div>
+            <div class="${boxClass}">
+              ${isLoading ? '<span class="spinner spinner-dark" aria-hidden="true"></span>' : ''}
+              <div class="state-content">
+                <p class="state-title">${escapeHtml(title)}</p>
+                <p class="state-desc">${escapeHtml(description)}</p>
+                ${
+                  retryCallback
+                    ? '<button type="button" class="retry-btn" id="retrySearchBtn">Reintentar consulta</button>'
+                    : ''
+                }
+              </div>
+            </div>
+          `;
+          searchDropdown.classList.add('open');
+
+          const closeBtn = document.getElementById('closeDropdownBtn');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+              searchDropdown.classList.remove('open');
+            });
+          }
+
+          if (retryCallback) {
+            const retryBtn = document.getElementById('retrySearchBtn');
+            if (retryBtn) {
+              retryBtn.addEventListener('click', retryCallback);
+            }
+          }
+        }
+
+        function renderSearchResults(features, queryText, schema) {
+          lastSearchResults = features;
+
+          if (!features || features.length === 0) {
+            renderDropdownMessage(
+              'warning',
+              'Sin coincidencias encontradas',
+              `No se encontraron direcciones para «${queryText}». Prueba con formatos catastrales como CL 72, KR 54 o CL 84.`
+            );
+            return;
+          }
+
+          const headerHtml = `
+            <div class="dropdown-header">
+              <span>${features.length} ${features.length === 1 ? 'dirección encontrada' : 'direcciones encontradas'} · Capa 105</span>
+              <button type="button" class="dropdown-close" id="closeDropdownBtn">Ocultar</button>
+            </div>
+          `;
+
+          const itemsHtml = features
+            .map(function (feature, idx) {
+              const title = getFeatureTitle(feature, schema, `Dirección #${idx + 1}`);
+              const meta = getFeatureSecondaryMeta(feature, schema);
+              return `
+                <li class="result-item">
+                  <button type="button" class="result-btn" data-result-index="${idx}">
+                    <span class="result-title">${escapeHtml(title)}</span>
+                    ${meta ? `<span class="result-meta">${escapeHtml(meta)}</span>` : ''}
+                  </button>
+                </li>
+              `;
+            })
+            .join('');
+
+          searchDropdown.innerHTML = `${headerHtml}<ul class="result-list">${itemsHtml}</ul>`;
+          searchDropdown.classList.add('open');
+
+          const closeBtn = document.getElementById('closeDropdownBtn');
+          if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+              searchDropdown.classList.remove('open');
+            });
+          }
+
+          const buttons = searchDropdown.querySelectorAll('.result-btn');
+          buttons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              const index = Number(btn.getAttribute('data-result-index'));
+              const chosen = lastSearchResults[index];
+              if (chosen) {
+                buttons.forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectAddressResult(chosen, schema);
+              }
+            });
+          });
+        }
+
+        function selectAddressResult(feature, schema) {
+          const latlng = getFeatureLatLng(feature);
+          if (!latlng) {
+            renderDropdownMessage(
+              'error',
+              'Geometría no válida',
+              'El registro seleccionado no contiene coordenadas geográficas válidas para centrar el mapa.'
+            );
+            return;
+          }
+
+          searchMarkerGroup.clearLayers();
+          searchDropdown.classList.remove('open');
+
+          const title = getFeatureTitle(feature, schema, 'Dirección seleccionada');
+          const popupHtml = `
+            <div class="popup-shell">
+              <div class="popup-head">
+                <h3 class="popup-title">${escapeHtml(title)}</h3>
+                <p class="popup-meta mono">Capa 105 · ${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}</p>
+              </div>
+              <div class="popup-body">
+                ${buildAttributesTableHtml(feature.properties, schema)}
+              </div>
+            </div>
+          `;
+
+          const marker = L.marker(latlng, {
+            icon: createPinIcon('#0f4c81'),
+            title: title
+          }).addTo(searchMarkerGroup);
+
+          marker.bindPopup(popupHtml, { maxWidth: 340 });
+
+          const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          map.setView(latlng, 18, { animate: !prefersReduced });
+          marker.openPopup();
+        }
+
+        async function executeAddressSearch(rawQuery) {
+          const cleaned = (rawQuery || '').trim().replace(/\s+/g, ' ');
+          if (cleaned.length < 2) {
+            renderDropdownMessage(
+              'warning',
+              'Escribe al menos 2 caracteres',
+              'Ingresa una vía o referencia de Barranquilla, por ejemplo: CL 72, KR 54 o CL 84.'
+            );
+            return;
+          }
+
+          if (activeSearchAbort) {
+            activeSearchAbort.abort();
+          }
+          activeSearchAbort = new AbortController();
+          const currentSignal = activeSearchAbort.signal;
+
+          setSearchLoading(true);
+          renderDropdownMessage(
+            'loading',
+            'Consultando direcciones...',
+            `Buscando «${cleaned.toUpperCase()}» en el servicio oficial de Mi Ciudad.`
+          );
+
+          try {
+            // 1. Consultar primero el esquema de campos en MapServer/105?f=pjson
+            const schema = await ensureLayerSchema(LAYER_DIRECCIONES_ID);
+            const candidateFields = getSearchCandidateFields(schema);
+
+            if (candidateFields.length === 0) {
+              throw new Error(
+                'No se encontraron campos de texto disponibles en el esquema de la capa 105.'
+              );
+            }
+
+            // 2. Construir cláusula WHERE dinámica con LIKE '%TEXTO_BUSQUEDA%' en mayúsculas
+            const upperText = cleaned.toUpperCase().replace(/'/g, "''");
+            const whereClause = candidateFields
+              .map(function (fieldName) {
+                return `${fieldName} LIKE '%${upperText}%'`;
+              })
+              .join(' OR ');
+
+            const params = new URLSearchParams({
+              where: whereClause,
+              outFields: '*',
+              outSR: '4326',
+              resultRecordCount: '15',
+              f: 'geojson'
+            });
+
+            const queryUrl = `${SERVICE_URL}/${LAYER_DIRECCIONES_ID}/query?${params.toString()}`;
+            const geojson = await fetchJsonWithTimeout(queryUrl, {
+              signal: currentSignal,
+              timeoutMs: REQUEST_TIMEOUT_MS
+            });
+
+            const features = Array.isArray(geojson.features) ? geojson.features : [];
+            renderSearchResults(features, cleaned.toUpperCase(), schema);
+          } catch (err) {
+            if (err && err.isCancelled) {
+              return;
+            }
+            const msg =
+              err && err.message
+                ? err.message
+                : 'No fue posible conectar con el servidor catastral de Barranquilla.';
+            renderDropdownMessage(
+              'error',
+              err && err.isTimeout ? 'El servidor tardó en responder' : 'Error en la búsqueda',
+              msg,
+              function () {
+                executeAddressSearch(cleaned);
+              }
+            );
+          } finally {
+            setSearchLoading(false);
+          }
+        }
+
+        // Eventos del formulario de búsqueda
+        searchForm.addEventListener('submit', function (e) {
+          e.preventDefault();
+          executeAddressSearch(addressInput.value);
+        });
+
+        addressInput.addEventListener('input', function () {
+          const hasText = addressInput.value.trim().length > 0;
+          clearSearchBtn.classList.toggle('visible', hasText);
+        });
+
+        addressInput.addEventListener('focus', function () {
+          if (lastSearchResults.length > 0 && addressInput.value.trim().length >= 2) {
+            searchDropdown.classList.add('open');
+          }
+        });
+
+        clearSearchBtn.addEventListener('click', function () {
+          addressInput.value = '';
+          clearSearchBtn.classList.remove('visible');
+          lastSearchResults = [];
+          searchDropdown.classList.remove('open');
+          searchMarkerGroup.clearLayers();
+          addressInput.focus();
+        });
+
+        // =====================================================================
+        // 3. Consulta espacial al hacer clic en el mapa (Capas 105 y 320, radio 30 m)
+        // =====================================================================
+        function openInspectorPanel() {
+          inspectorPanel.classList.add('open');
+          inspectorPanel.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeInspectorPanel() {
+          inspectorPanel.classList.remove('open');
+          inspectorPanel.setAttribute('aria-hidden', 'true');
+          clickOverlayGroup.clearLayers();
+          highlightGeometryGroup.clearLayers();
+        }
+
+        closeInspectorBtn.addEventListener('click', closeInspectorPanel);
+
+        tabButtons.forEach(function (tabBtn) {
+          tabBtn.addEventListener('click', function () {
+            const tabKey = tabBtn.getAttribute('data-tab');
+            activeInspectorTab = tabKey;
+            tabButtons.forEach(function (btn) {
+              const isSelected = btn.getAttribute('data-tab') === tabKey;
+              btn.classList.toggle('active', isSelected);
+              btn.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+            });
+            if (lastClickState) {
+              renderInspectorState(lastClickState);
+            }
+          });
+        });
+
+        function highlightSelectedFeature(feature, layerId) {
+          highlightGeometryGroup.clearLayers();
+          if (!feature || !feature.geometry) return;
+
+          if (feature.geometry.type === 'Point') {
+            const latlng = getFeatureLatLng(feature);
+            if (latlng) {
+              L.marker(latlng, {
+                icon: createPinIcon('#0284c7')
+              }).addTo(highlightGeometryGroup);
+              map.panTo(latlng, { animate: true });
+            }
+            return;
+          }
+
+          const geoLayer = L.geoJSON(feature, {
+            style: {
+              color: layerId === LAYER_MANZANAS_ID ? '#0f4c81' : '#0284c7',
+              weight: 3,
+              opacity: 1,
+              fillColor: '#0284c7',
+              fillOpacity: 0.22
+            }
+          }).addTo(highlightGeometryGroup);
+
+          const bounds = geoLayer.getBounds();
+          if (bounds && bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [60, 60], maxZoom: 18 });
+          }
+        }
+
+        function renderFeatureGroupHtml(title, features, layerId, schema, errorMsg) {
+          if (errorMsg) {
+            return `
+              <section class="feature-section">
+                <div class="feature-section-head">
+                  <h3 class="feature-section-title">${escapeHtml(title)}</h3>
+                  <span class="feature-section-count">Error</span>
+                </div>
+                <div class="state-box error">
+                  <div class="state-content">
+                    <p class="state-desc">${escapeHtml(errorMsg)}</p>
+                  </div>
+                </div>
+              </section>
+            `;
+          }
+
+          if (!features || features.length === 0) {
+            return `
+              <section class="feature-section">
+                <div class="feature-section-head">
+                  <h3 class="feature-section-title">${escapeHtml(title)}</h3>
+                  <span class="feature-section-count">0 registros</span>
+                </div>
+                <div class="state-box">
+                  <div class="state-content">
+                    <p class="state-desc" style="color: var(--text-muted);">
+                      Sin elementos encontrados dentro del radio de 30 metros en esta capa.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            `;
+          }
+
+          const cardsHtml = features
+            .map(function (feat, idx) {
+              const featTitle = getFeatureTitle(
+                feat,
+                schema,
+                layerId === LAYER_DIRECCIONES_ID ? `Dirección #${idx + 1}` : `Manzana #${idx + 1}`
+              );
+              return `
+                <article class="feature-card">
+                  <div class="feature-card-header">
+                    <h4 class="feature-card-name">${escapeHtml(featTitle)}</h4>
+                    <button
+                      type="button"
+                      class="feature-focus-btn"
+                      data-layer-id="${layerId}"
+                      data-feature-idx="${idx}"
+                    >
+                      Resaltar
+                    </button>
+                  </div>
+                  ${buildAttributesTableHtml(feat.properties, schema)}
+                </article>
+              `;
+            })
+            .join('');
+
+          return `
+            <section class="feature-section">
+              <div class="feature-section-head">
+                <h3 class="feature-section-title">${escapeHtml(title)}</h3>
+                <span class="feature-section-count">${features.length} ${
+            features.length === 1 ? 'registro' : 'registros'
+          }</span>
+              </div>
+              ${cardsHtml}
+            </section>
+          `;
+        }
+
+        function renderInspectorState(state) {
+          if (state.loading) {
+            countAllEl.textContent = '…';
+            count105El.textContent = '…';
+            count320El.textContent = '…';
+            inspectorBody.innerHTML = `
+              <div class="state-box">
+                <span class="spinner spinner-dark" aria-hidden="true"></span>
+                <div class="state-content">
+                  <p class="state-title">Consultando capas catastrales...</p>
+                  <p class="state-desc">
+                    Buscando direcciones (capa 105) y manzanas (capa 320) en un radio de 30 metros.
+                  </p>
+                </div>
+              </div>
+            `;
+            return;
+          }
+
+          const f105 = state.features105 || [];
+          const f320 = state.features320 || [];
+          count105El.textContent = String(f105.length);
+          count320El.textContent = String(f320.length);
+          countAllEl.textContent = String(f105.length + f320.length);
+
+          // Si ambos fallaron completamente, mostrar error global con botón de reintento
+          if (state.error105 && state.error320) {
+            inspectorBody.innerHTML = `
+              <div class="state-box error">
+                <div class="state-content">
+                  <p class="state-title">No se pudo completar la consulta espacial</p>
+                  <p class="state-desc">${escapeHtml(state.error105)}</p>
+                  <button type="button" class="retry-btn" id="retryClickQueryBtn">
+                    Reintentar consulta
+                  </button>
+                </div>
+              </div>
+            `;
+            const retryBtn = document.getElementById('retryClickQueryBtn');
+            if (retryBtn) {
+              retryBtn.addEventListener('click', function () {
+                queryMapPoint(state.lat, state.lng);
+              });
+            }
+            return;
+          }
+
+          // Estado vacío en ambas capas
+          if (activeInspectorTab === 'all' && f105.length === 0 && f320.length === 0 && !state.error105 && !state.error320) {
+            inspectorBody.innerHTML = `
+              <div class="state-box warning">
+                <div class="state-content">
+                  <p class="state-title">Sin información catastral en este punto</p>
+                  <p class="state-desc">
+                    No se encontraron direcciones (105) ni manzanas (320) dentro de un radio de 30 metros.
+                    Haz clic sobre una vía, predio o manzana urbana de Barranquilla.
+                  </p>
+                </div>
+              </div>
+            `;
+            return;
+          }
+
+          let html = '';
+          if (activeInspectorTab === 'all' || activeInspectorTab === '105') {
+            html += renderFeatureGroupHtml(
+              'Direcciones (Capa 105)',
+              f105,
+              LAYER_DIRECCIONES_ID,
+              state.schema105,
+              state.error105
+            );
+          }
+          if (activeInspectorTab === 'all' || activeInspectorTab === '320') {
+            html += renderFeatureGroupHtml(
+              'Manzanas (Capa 320)',
+              f320,
+              LAYER_MANZANAS_ID,
+              state.schema320,
+              state.error320
+            );
+          }
+
+          inspectorBody.innerHTML = html;
+
+          // Enlazar botones "Resaltar"
+          const focusButtons = inspectorBody.querySelectorAll('.feature-focus-btn');
+          focusButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              const lid = Number(btn.getAttribute('data-layer-id'));
+              const idx = Number(btn.getAttribute('data-feature-idx'));
+              const list = lid === LAYER_DIRECCIONES_ID ? f105 : f320;
+              if (list[idx]) {
+                highlightSelectedFeature(list[idx], lid);
+              }
+            });
+          });
+        }
+
+        async function querySpatialLayer(layerId, lat, lng, signal) {
+          const params = new URLSearchParams({
+            geometry: `${lng},${lat}`,
+            geometryType: 'esriGeometryPoint',
+            inSR: '4326',
+            distance: '30',
+            units: 'esriSRUnit_Meter',
+            outFields: '*',
+            outSR: '4326',
+            f: 'geojson'
+          });
+
+          const url = `${SERVICE_URL}/${layerId}/query?${params.toString()}`;
+          const [geojson, schema] = await Promise.all([
+            fetchJsonWithTimeout(url, { signal: signal, timeoutMs: REQUEST_TIMEOUT_MS }),
+            ensureLayerSchema(layerId).catch(function () {
+              return null;
+            })
+          ]);
+
+          return {
+            features: Array.isArray(geojson.features) ? geojson.features : [],
+            schema: schema
+          };
+        }
+
+        async function queryMapPoint(lat, lng) {
+          if (activeClickAbort) {
+            activeClickAbort.abort();
+          }
+          activeClickAbort = new AbortController();
+          const signal = activeClickAbort.signal;
+
+          clickOverlayGroup.clearLayers();
+          highlightGeometryGroup.clearLayers();
+
+          // Dibujar círculo de radio 30 metros y marcador del punto consultado
+          L.circle([lat, lng], {
+            radius: 30,
+            color: '#0f4c81',
+            weight: 1.5,
+            dashArray: '5, 5',
+            fillColor: '#0f4c81',
+            fillOpacity: 0.09,
+            interactive: false
+          }).addTo(clickOverlayGroup);
+
+          L.circleMarker([lat, lng], {
+            radius: 5,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: '#0f4c81',
+            fillOpacity: 1,
+            interactive: false
+          }).addTo(clickOverlayGroup);
+
+          inspectorCoords.textContent = `Lat ${lat.toFixed(6)} · Lng ${lng.toFixed(6)}`;
+          lastClickState = { lat: lat, lng: lng, loading: true };
+          openInspectorPanel();
+          renderInspectorState(lastClickState);
+
+          const [res105, res320] = await Promise.allSettled([
+            querySpatialLayer(LAYER_DIRECCIONES_ID, lat, lng, signal),
+            querySpatialLayer(LAYER_MANZANAS_ID, lat, lng, signal)
+          ]);
+
+          if (signal.aborted) {
+            return;
+          }
+
+          const state = {
+            lat: lat,
+            lng: lng,
+            loading: false,
+            features105: res105.status === 'fulfilled' ? res105.value.features : [],
+            schema105: res105.status === 'fulfilled' ? res105.value.schema : null,
+            error105:
+              res105.status === 'rejected'
+                ? res105.reason && res105.reason.message
+                  ? res105.reason.message
+                  : 'Error al consultar la capa de Direcciones (105).'
+                : null,
+            features320: res320.status === 'fulfilled' ? res320.value.features : [],
+            schema320: res320.status === 'fulfilled' ? res320.value.schema : null,
+            error320:
+              res320.status === 'rejected'
+                ? res320.reason && res320.reason.message
+                  ? res320.reason.message
+                  : 'Error al consultar la capa de Manzanas (320).'
+                : null
+          };
+
+          lastClickState = state;
+
+          // Resaltar automáticamente la primera manzana o dirección encontrada en el mapa
+          if (state.features320.length > 0) {
+            L.geoJSON(state.features320[0], {
+              style: {
+                color: '#0f4c81',
+                weight: 2.5,
+                opacity: 0.95,
+                fillColor: '#0284c7',
+                fillOpacity: 0.18
+              }
+            }).addTo(highlightGeometryGroup);
+          }
+
+          state.features105.forEach(function (ptFeat) {
+            const ptLatLng = getFeatureLatLng(ptFeat);
+            if (ptLatLng) {
+              L.circleMarker(ptLatLng, {
+                radius: 6,
+                color: '#ffffff',
+                weight: 2,
+                fillColor: '#0284c7',
+                fillOpacity: 1
+              }).addTo(highlightGeometryGroup);
+            }
+          });
+
+          renderInspectorState(state);
+        }
+
+        map.on('click', function (e) {
+          searchDropdown.classList.remove('open');
+          queryMapPoint(e.latlng.lat, e.latlng.lng);
+        });
+
+        // Precarga silenciosa del esquema de la capa 105 para acelerar la primera búsqueda
+        ensureLayerSchema(LAYER_DIRECCIONES_ID).catch(function () {
+          // Se reintentará automáticamente al realizar la primera búsqueda
+        });
+      })();
+    </script>
+  </body>
+</html>

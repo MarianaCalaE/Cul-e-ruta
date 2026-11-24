@@ -1,0 +1,6 @@
+{
+  "name": "Visor Catastral Mi Ciudad · Barranquilla",
+  "description": "Aplicación web interactiva conectada a la API REST oficial de Catastro Mi Ciudad (Alcaldía de Barranquilla) con búsqueda de direcciones y consulta espacial en radio de 30 metros.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
